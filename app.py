@@ -83,10 +83,10 @@ if ticker_input:
                 status_color = "error"
             else:
                 if curr_50 > curr_200:
-                    status_message = f"Bullish Structure: 50-Day MA is holding above the macro 200-Day MA."
+                    status_message = f"Bullish Structure: 50-Day MA is holding above the 200-Day MA."
                     status_color = "success"
                 else:
-                    status_message = f"Bearish Structure: 50-Day MA is currently tracking below the macro 200-Day MA."
+                    status_message = f"Bearish Structure: 50-Day MA is currently tracking below the 200-Day MA."
                     status_color = "warning"
 
         # Signal Status Alert Layout
