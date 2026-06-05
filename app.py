@@ -17,53 +17,62 @@ st.markdown("Track 50-Day and 100-Day Moving Averages for **Pakistan Stock Excha
 # --- SIDEBAR INTERFACE ---
 st.sidebar.header("Configuration")
 
-# Standard instructions for PSX tickers
-st.sidebar.info("Enter symbols without suffix. The app automatically appends '.KA'.\n\nExamples:\n- SYS (Systems Ltd)\n- HUBC (Hubco)\n- EFERT (Engro Fert)\n- OGDC (OGDCL)")
+st.sidebar.info(
+    "Enter the standard symbol. The app handles the system backend extensions automatically.\n\n"
+    "**Popular Examples:**\n"
+    "- `SYS` (Systems Limited)\n"
+    "- `HUBC` (Hub Power Company)\n"
+    "- `EFERT` (Engro Fertilizers)\n"
+    "- `OGDC` (OGDCL)\n"
+    "- `^KSE100` (Market Benchmark)"
+)
 
 ticker_input = st.sidebar.text_input("Enter PSX Stock Ticker:", value="SYS").strip().upper()
-
-# Handle standard benchmark indices vs equity components
-if ticker_input.startswith("^"):
-    ticker = ticker_input
-else:
-    ticker = f"{ticker_input}.KA"
 
 # Date Selection (2 years back to compute 100-day MA properly)
 end_date = datetime.today()
 start_date = end_date - timedelta(days=2*365)
 
 # --- DATA FETCHING & CALCULATION ---
-@st.cache_data(ttl=3600)  # Cache for 1 hour to keep performance swift on deployment
-def load_data(symbol, start, end):
-    try:
-        adjusted_start = start - timedelta(days=150)
-        df = yf.download(symbol, start=adjusted_start, end=end)
-        if df.empty:
-            return None
+@st.cache_data(ttl=3600)
+def load_data(symbol_raw, start, end):
+    # Benchmark index handling
+    if symbol_raw.startswith("^"):
+        symbols_to_try = [symbol_raw]
+    else:
+        # Tries matching via newer .PSX first, then older .KA configuration
+        symbols_to_try = [f"{symbol_raw}.PSX", f"{symbol_raw}.KA"]
         
-        # Flattens MultiIndex columns from newer yfinance outputs
-        if isinstance(df.columns, pd.MultiIndex):
-            df.columns = df.columns.get_level_values(0)
-            
-        # Calculate Moving Averages
-        df['50_MA'] = df['Close'].rolling(window=50).mean()
-        df['100_MA'] = df['Close'].rolling(window=100).mean()
-        
-        # Filter back to user's main display window
-        df = df[df.index >= pd.to_datetime(start)]
-        return df
-    except Exception as e:
-        return None
+    adjusted_start = start - timedelta(days=150)
+    
+    for symbol in symbols_to_try:
+        try:
+            df = yf.download(symbol, start=adjusted_start, end=end, progress=False)
+            if df is not None and not df.empty and len(df) > 100:
+                # Flattens newer MultiIndex column headers natively if present
+                if isinstance(df.columns, pd.MultiIndex):
+                    df.columns = df.columns.get_level_values(0)
+                
+                # Compute Moving Averages
+                df['50_MA'] = df['Close'].rolling(window=50).mean()
+                df['100_MA'] = df['Close'].rolling(window=100).mean()
+                
+                # Crop data frame back to presentation date window
+                df = df[df.index >= pd.to_datetime(start)]
+                return df, symbol
+        except Exception:
+            continue
+    return None, None
 
 if ticker_input:
-    with st.spinner(f"Fetching data for {ticker}..."):
-        data = load_data(ticker, start_date, end_date)
+    with st.spinner(f"Scanning market data for '{ticker_input}'..."):
+        data, active_symbol = load_data(ticker_input, start_date, end_date)
         
     if data is not None and len(data) > 0:
         
         # --- GOLDEN CROSS CALCULATION ---
         latest_data = data.tail(2)
-        status_message = "No fresh crossover detected recently."
+        status_message = "No fresh technical crossover detected today."
         status_color = "info"
         
         if len(latest_data) == 2:
@@ -71,26 +80,26 @@ if ticker_input:
             curr_50, curr_100 = latest_data['50_MA'].iloc[1], latest_data['100_MA'].iloc[1]
             
             if prev_50 <= prev_100 and curr_50 > curr_100:
-                status_message = f"🚀 GOLDEN CROSS DETECTED on {ticker_input}! (Bullish Signal)"
+                status_message = f"🚀 GOLDEN CROSS DETECTED on {ticker_input}! (Bullish Trend Reversal)"
                 status_color = "success"
             elif prev_50 >= prev_100 and curr_50 < curr_100:
-                status_message = f"⚠️ DEATH CROSS DETECTED on {ticker_input}! (Bearish Signal)"
+                status_message = f"⚠️ DEATH CROSS DETECTED on {ticker_input}! (Bearish Trend Reversal)"
                 status_color = "error"
             else:
                 if curr_50 > curr_100:
-                    status_message = "Bullish Outlook: 50-Day MA is currently holding above the 100-Day MA."
+                    status_message = f"Bullish Structure: 50-Day MA is holding above the 100-Day MA."
                     status_color = "success"
                 else:
-                    status_message = "Bearish Outlook: 50-Day MA is running below the 100-Day MA."
+                    status_message = f"Bearish Structure: 50-Day MA is currently tracking below the 100-Day MA."
                     status_color = "warning"
 
-        # Display Live Technical Alignment Alerts
+        # Signal Status Alert Layout
         if status_color == "success": st.success(status_message)
         elif status_color == "warning": st.warning(status_message)
         elif status_color == "error": st.error(status_message)
         else: st.info(status_message)
 
-        # --- METRICS GRID ---
+        # --- METRICS DISPLAY ---
         col1, col2, col3 = st.columns(3)
         latest_close = float(data['Close'].iloc[-1])
         latest_50 = float(data['50_MA'].iloc[-1])
@@ -100,7 +109,7 @@ if ticker_input:
         col2.metric("50-Day MA", f"Rs. {latest_50:,.2f}")
         col3.metric("100-Day MA", f"Rs. {latest_100:,.2f}")
 
-        # --- INTERACTIVE GRAPH ---
+        # --- INTERACTIVE PLOTLY GRAPH ---
         fig = go.Figure()
 
         fig.add_trace(go.Scatter(
@@ -122,7 +131,7 @@ if ticker_input:
         ))
 
         fig.update_layout(
-            title=f"{ticker_input} Price Performance (PKR)",
+            title=f"{ticker_input} Historical Analysis ({active_symbol})",
             xaxis_title="Date",
             yaxis_title="Price (PKR)",
             hovermode="x unified",
@@ -138,4 +147,4 @@ if ticker_input:
             st.dataframe(data[['Close', '50_MA', '100_MA']].tail(30).sort_index(ascending=False), use_container_width=True)
             
     else:
-        st.error(f"Could not retrieve data for symbol '{ticker_input}'. Make sure it is active on the Pakistan Stock Exchange.")
+        st.error(f"Could not retrieve data for symbol '{ticker_input}'. Make sure the ticker is typed correctly without any suffix.")
