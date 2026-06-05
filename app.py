@@ -127,7 +127,7 @@ if ticker_input:
         ))
 
         fig.update_layout(
-            title=f"{ticker_input} Macro Historical Analysis ({active_symbol})",
+            title=f"{ticker_input} Analysis ({active_symbol})",
             xaxis_title="Date",
             yaxis_title="Price (PKR)",
             hovermode="x unified",
