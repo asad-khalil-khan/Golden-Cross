@@ -29,36 +29,31 @@ st.sidebar.info(
 
 ticker_input = st.sidebar.text_input("Enter PSX Stock Ticker:", value="SYS").strip().upper()
 
-# Date Selection (Increased to 3 years back to ensure plenty of historical data for a 200-day MA)
+# Date Selection (3 years back to ensure plenty of historical data for a 200-day MA)
 end_date = datetime.today()
 start_date = end_date - timedelta(days=3*365)
 
 # --- DATA FETCHING & CALCULATION ---
 @st.cache_data(ttl=3600)
 def load_data(symbol_raw, start, end):
-    # Benchmark index handling
     if symbol_raw.startswith("^"):
         symbols_to_try = [symbol_raw]
     else:
-        # Tries matching via newer .PSX first, then older .KA configuration
         symbols_to_try = [f"{symbol_raw}.PSX", f"{symbol_raw}.KA"]
         
-    # Fetch extra 250 days behind start date so the 200 MA starts calculating immediately
     adjusted_start = start - timedelta(days=250)
     
     for symbol in symbols_to_try:
         try:
             df = yf.download(symbol, start=adjusted_start, end=end, progress=False)
             if df is not None and not df.empty and len(df) > 200:
-                # Flattens newer MultiIndex column headers natively if present
                 if isinstance(df.columns, pd.MultiIndex):
                     df.columns = df.columns.get_level_values(0)
                 
-                # Compute Moving Averages (Updated to 200-Day window)
+                # Compute Moving Averages
                 df['50_MA'] = df['Close'].rolling(window=50).mean()
                 df['200_MA'] = df['Close'].rolling(window=200).mean()
                 
-                # Crop data frame back to presentation date window
                 df = df[df.index >= pd.to_datetime(start)]
                 return df, symbol
         except Exception:
@@ -138,11 +133,22 @@ if ticker_input:
             hovermode="x unified",
             template="plotly_dark",
             legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1),
-            margin=dict(l=20, r=20, t=60, b=20),
-            height=600
+            margin=dict(l=10, r=10, t=60, b=10),
+            height=500,
+            
+            # MOBILE LOCK DOWN PROPERTIES BELOW:
+            dragmode=False,  # Completely blocks touch-drag box selections
+            xaxis=dict(
+                fixedrange=True  # Locks horizontal axes completely against pinch zooms
+            ),
+            yaxis=dict(
+                fixedrange=True, # Locks vertical axes completely against pinch zooms
+                tickformat=".2f" # Forces standard currency display with no raw decimals
+            )
         )
 
-        st.plotly_chart(fig, use_container_width=True)
+        # Hides the upper menu toolbar buttons which cause layout issues on mobile screens
+        st.plotly_chart(fig, use_container_width=True, config={'displayModeBar': False})
         
         with st.expander("Show Historic Raw Data"):
             st.dataframe(data[['Close', '50_MA', '200_MA']].tail(30).sort_index(ascending=False), use_container_width=True)
